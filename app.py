@@ -16,7 +16,7 @@ st.markdown(
 )
 
 # ------------------- Groq LLM -------------------
-groq_api_key = "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"
+groq_api_key = "Your_api_key"
 llm = ChatGroq(
     model="llama-3.1-8b-instant",
     groq_api_key=groq_api_key,
@@ -87,4 +87,5 @@ if question:
 
         st.session_state["messages"].append({"role": "assistant", "content": response})
         st.chat_message("assistant").write(response)
+
 
