@@ -3,87 +3,66 @@ import re
 from langchain_groq import ChatGroq
 from langchain.chains import LLMMathChain, LLMChain
 from langchain.prompts import PromptTemplate
-from langchain_community.utilities import WikipediaAPIWrapper
-from langchain.agents.agent_types import AgentType
-from langchain.agents import Tool, initialize_agent
-from langchain.callbacks import StreamlitCallbackHandler
 
-# ------------------- Streamlit APP CONFIG -------------------
+# ------------------- Streamlit Config -------------------
 st.set_page_config(
-    page_title="LogicBot – Solves logical and aptitude questions",
-    page_icon="🧮",
+    page_title="Quizzy – Friendly aptitude assistant",
+    page_icon="",
     layout="wide"
 )
-st.markdown("<h1 style='text-align:center;'>LogicBot – Solves logical and aptitude questions</h1>", unsafe_allow_html=True)
-
-# ------------------- Groq API Key -------------------
-groq_api_key = "Your_api_key"  # <-- replace with your Groq API key
-
-# ------------------- Initialize LLM -------------------
-llm = ChatGroq(model="llama-3.3-70b-versatile", groq_api_key=groq_api_key, temperature=0.0)
-
-# ------------------- Initialize Tools -------------------
-wikipedia_wrapper = WikipediaAPIWrapper()
-wikipedia_tool = Tool(
-    name="Wikipedia",
-    func=wikipedia_wrapper.run,
-    description="Search the Internet for information on various topics."
+st.markdown(
+    "<h1 style='text-align:center;'> Quizzy – Friendly aptitude assistant</h1>",
+    unsafe_allow_html=True
 )
 
-# Math calculator with numeric-only output
-math_chain = LLMMathChain.from_llm(llm=llm, verbose=False)
-
-def safe_calculator(query: str) -> str:
-    """Wrapper to ensure only numeric result is returned from LLMMathChain."""
-    try:
-        result = math_chain.run(query)
-        if isinstance(result, str):
-            # Extract only first numeric value
-            match = re.search(r"[-+]?\d*\.?\d+", result)
-            if match:
-                return match.group(0)
-        return result
-    except Exception as e:
-        return f"Calculation error: {e}"
-
-calculator = Tool(
-    name="Calculator",
-    func=safe_calculator,
-    description="Solve math-related questions; only input mathematical expressions."
+# ------------------- Groq LLM -------------------
+groq_api_key = "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"
+llm = ChatGroq(
+    model="llama-3.1-8b-instant",
+    groq_api_key=groq_api_key,
+    temperature=0.0,
+    streaming=True,
+    max_tokens=1500
 )
 
-# Reasoning / step-by-step explanation tool
-prompt = """
-You are an agent tasked with solving the user's mathematical or logical questions. 
-Provide a detailed, logical solution in a step-by-step, point-wise format.
+# ------------------- Hybrid Math & Reasoning -------------------
+hybrid_prompt = """
+You are an expert in aptitude, math, and logical reasoning. 
+Solve the problem **step by step**.
+
+For each step:
+1. Identify known quantities (numbers, units).  
+2. Convert units if necessary.  
+3. Apply correct formulas clearly.  
+4. Show intermediate calculations.  
+5. Highlight the final numeric answer with correct units.  
+6. If multiple solution methods exist, choose the simplest one.
+
 Question: {question}
+
 Answer:
 """
-prompt_template = PromptTemplate(input_variables=["question"], template=prompt)
-chain = LLMChain(llm=llm, prompt=prompt_template)
 
-reasoning_tool = Tool(
-    name="Reasoning Tool",
-    func=chain.run,
-    description="Solve logic-based and reasoning questions."
-)
-
-# ------------------- Initialize Agent -------------------
-assistant_agent = initialize_agent(
-    tools=[wikipedia_tool, calculator, reasoning_tool],
+reasoning_chain = LLMChain(
     llm=llm,
-    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-    verbose=False,
-    handle_parsing_errors=True
+    prompt=PromptTemplate(input_variables=["question"], template=hybrid_prompt)
 )
+
+# ------------------- Fast Arithmetic -------------------
+def fast_eval(expr: str) -> str:
+    try:
+        if re.fullmatch(r"[\d\s+\-*/().]+", expr):
+            return str(eval(expr))
+    except:
+        return None
+    return None
 
 # ------------------- Session State -------------------
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
-        {"role": "assistant", "content": "Hi! I'm your Math & Knowledge chatbot. Ask me anything!"}
+        {"role": "assistant", "content": " Hi! Ask me any aptitude, logic, or math question!"}
     ]
 
-# ------------------- Display Chat -------------------
 for msg in st.session_state["messages"]:
     st.chat_message(msg["role"]).write(msg["content"])
 
@@ -91,16 +70,21 @@ for msg in st.session_state["messages"]:
 question = st.chat_input("Enter your question here...")
 
 if question:
-    # Append user message
     st.session_state["messages"].append({"role": "user", "content": question})
     st.chat_message("user").write(question)
 
-    with st.spinner("Generating response..."):
-        st_cb = StreamlitCallbackHandler(st.container(), expand_new_thoughts=False)
+    with st.spinner("⚡ Solving..."):
+        try:
+            # Step 1: Fast arithmetic if pure numbers
+            arithmetic_result = fast_eval(question)
+            if arithmetic_result:
+                response = f"**Answer:** {arithmetic_result}"
+            else:
+                # Step 2: Word problem / reasoning
+                response = reasoning_chain.run(question)
+        except Exception as e:
+            response = f" Error: {e}"
 
-        # Pass only latest user input
-        response = assistant_agent.run(question, callbacks=[st_cb])
-
-        # Append assistant response
         st.session_state["messages"].append({"role": "assistant", "content": response})
         st.chat_message("assistant").write(response)
+
